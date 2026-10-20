@@ -67,8 +67,12 @@ pub fn logo(svg: &[u8], proto: Protocol, cols: u32, rows: u32, cell: (u32, u32),
                 let (mut a, mut c) = (0i64, [0i64; 3]);
                 for (dx, dy) in (0..ss).flat_map(|dy| (0..ss).map(move |dx| (dx, dy))) {
                     let p = pm.pixel(x * ss + dx, y * ss + dy).unwrap();
-                    a += p.alpha() as i64;
-                    c = [c[0] + p.red() as i64, c[1] + p.green() as i64, c[2] + p.blue() as i64];
+                    // squaring alpha fades the SVG's soft drop shadow (faint, dark) far more than
+                    // the logo body, which would otherwise ring it with a black halo
+                    let al = p.alpha() as i64;
+                    a += al * al / 255;
+                    let q = |v: u8| v as i64 * al / 255;
+                    c = [c[0] + q(p.red()), c[1] + q(p.green()), c[2] + q(p.blue())];
                 }
                 let n = (ss * ss) as i64;
                 match bg {
