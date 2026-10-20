@@ -56,7 +56,7 @@ screenfetch [--logo FILE] [--distro ID] [--protocol auto|kitty|iterm2|sixel|bloc
             [--rows N] [--list]
 ```
 
-Sixel is picked automatically on foot/mlterm; elsewhere set `SCREENFETCH_SIXEL=1` or use `--protocol sixel`.
+Sixel is detected automatically by asking the terminal (DA1); force it with `--protocol sixel`. The terminal is also asked for its cell size so the logo stays square.
 
 ## Config
 
@@ -66,7 +66,7 @@ Sixel is picked automatically on foot/mlterm; elsewhere set `SCREENFETCH_SIXEL=1
 logo     = "/path/to/logo.svg"
 distro   = "fedora"
 protocol = "auto"        # auto | kitty | iterm2 | sixel | blocks
-rows     = 10
+rows     = 20
 color    = "cyan"        # black red green yellow blue magenta cyan white
 show     = ["os", "kernel", "uptime", "shell", "cpu", "memory"]
 # keys: os release host kernel uptime shell display de wm theme icons font

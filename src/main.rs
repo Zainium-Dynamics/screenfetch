@@ -2,6 +2,7 @@ mod config;
 mod info;
 mod logo;
 mod render;
+mod term;
 
 use render::{Logo, Protocol};
 
@@ -11,7 +12,7 @@ USAGE: screenfetch [OPTIONS]
   --logo FILE      render this SVG
   --distro ID      look up <share>/ID.pixmap/ID_logo.svg (default: from /etc/os-release)
   --protocol P     auto | kitty | iterm2 | sixel | blocks
-  --rows N         logo height in terminal rows (default 10)
+  --rows N         logo height in terminal rows (default 20)
   --list           print logo search paths and embedded logos
   -h, --help
 Config: ~/.config/screenfetch/config.toml (see README)
@@ -24,12 +25,13 @@ const KEYS: &[&str] = &[
 
 fn main() {
     let cfg = config::load().unwrap_or_else(|e| die(&e));
+    let probe = term::probe();
     let mut args = std::env::args().skip(1);
     let mut proto = match cfg.protocol.as_deref() {
-        None | Some("auto") => Protocol::detect(),
+        None | Some("auto") => Protocol::detect(probe.sixel),
         Some(p) => Protocol::parse(p).unwrap_or_else(|| die("unknown protocol in config")),
     };
-    let (mut file, mut distro, mut rows, mut list) = (cfg.logo.clone(), cfg.distro.clone(), cfg.rows.unwrap_or(10), false);
+    let (mut file, mut distro, mut rows, mut list) = (cfg.logo.clone(), cfg.distro.clone(), cfg.rows.unwrap_or(20), false);
     while let Some(a) = args.next() {
         let mut val = |n: &str| args.next().unwrap_or_else(|| die(&format!("{n} needs a value")));
         match a.as_str() {
@@ -67,8 +69,10 @@ fn main() {
     }
 
     let svg = logo::resolve(file.as_deref(), &ids).unwrap_or_else(|e| die(&e));
-    let cols = rows * 2;
-    let art = render::logo(&svg, proto, cols, rows).unwrap_or_else(|e| die(&e));
+    // keep the logo square on screen whatever the cell shape is
+    let cell = probe.cell.unwrap_or((10, 20));
+    let cols = (rows * cell.1 + cell.0 / 2) / cell.0;
+    let art = render::logo(&svg, proto, cols, rows, cell).unwrap_or_else(|e| die(&e));
 
     let (title, rows_info) = info::collect(&os);
     let col = cfg.color.as_deref().map_or(36, |c| config::ansi_color(c).unwrap_or_else(|| die("unknown colour in config")));

@@ -20,14 +20,14 @@ impl Protocol {
         }
     }
 
-    pub fn detect() -> Self {
+    pub fn detect(sixel_probed: bool) -> Self {
         let var = |k: &str| std::env::var(k).unwrap_or_default();
         let (term, prog) = (var("TERM"), var("TERM_PROGRAM"));
         if var("KITTY_WINDOW_ID") != "" || term == "xterm-kitty" || prog == "ghostty" || term == "xterm-ghostty" {
             Self::Kitty
         } else if prog == "iTerm.app" || prog == "WezTerm" {
             Self::Iterm2
-        } else if term.starts_with("foot") || term.starts_with("mlterm") || var("SCREENFETCH_SIXEL") != "" {
+        } else if term.starts_with("foot") || term.starts_with("mlterm") || sixel_probed || var("SCREENFETCH_SIXEL") != "" {
             Self::Sixel
         } else {
             Self::Blocks
@@ -52,13 +52,25 @@ pub enum Logo {
     Graphic(String),
 }
 
-pub fn logo(svg: &[u8], proto: Protocol, cols: u32, rows: u32) -> Result<Logo, String> {
+pub fn logo(svg: &[u8], proto: Protocol, cols: u32, rows: u32, cell: (u32, u32)) -> Result<Logo, String> {
     match proto {
         Protocol::Blocks => {
-            let pm = rasterize(svg, cols, rows * 2)?;
+            // supersample 4x and box-average (premultiplied) so thin edges survive the tiny grid
+            const SS: u32 = 4;
+            let pm = rasterize(svg, cols * SS, rows * 2 * SS)?;
             let px = |x: u32, y: u32| {
-                let p = pm.pixel(x, y).unwrap().demultiply();
-                (p.alpha() > 100).then(|| (p.red(), p.green(), p.blue()))
+                let (mut a, mut r, mut g, mut b) = (0u32, 0u32, 0u32, 0u32);
+                for (dx, dy) in (0..SS).flat_map(|dy| (0..SS).map(move |dx| (dx, dy))) {
+                    let p = pm.pixel(x * SS + dx, y * SS + dy).unwrap();
+                    a += p.alpha() as u32;
+                    r += p.red() as u32;
+                    g += p.green() as u32;
+                    b += p.blue() as u32;
+                }
+                (a > 128 * SS * SS).then(|| {
+                    let un = |v: u32| (v * 255 / a.max(1)).min(255) as u8;
+                    (un(r), un(g), un(b))
+                })
             };
             let lines = (0..rows)
                 .map(|r| {
@@ -80,8 +92,8 @@ pub fn logo(svg: &[u8], proto: Protocol, cols: u32, rows: u32) -> Result<Logo, S
             Ok(Logo::Lines(lines))
         }
         Protocol::Sixel => {
-            // assume ~10x20 px cells (1:2, like the block fallback); cursor is saved/restored around it
-            let pm = rasterize(svg, cols * 10, rows * 20)?;
+            // cursor is saved/restored around the image
+            let pm = rasterize(svg, cols * cell.0, rows * cell.1)?;
             let rgba: Vec<u8> = pm
                 .pixels()
                 .iter()

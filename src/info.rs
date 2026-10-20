@@ -76,7 +76,7 @@ fn terminal() -> String {
         };
         let name = file(&format!("/proc/{ppid}/comm"));
         if !["bash", "zsh", "fish", "sh", "screenfetch", "fastfetch"].contains(&name.as_str()) && !name.is_empty() {
-            return name.trim_end_matches("-server").to_string();
+            return name.trim_end_matches("-server").trim_end_matches("-agent").to_string();
         }
         pid = ppid;
     }
