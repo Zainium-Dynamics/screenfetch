@@ -58,9 +58,9 @@ screenfetch [--logo FILE] [--distro ID] [--protocol auto|kitty|iterm2|sixel|bloc
 
 Sixel is detected automatically by asking the terminal (DA1); force it with `--protocol sixel`. The terminal is also asked for its cell size so the logo stays square.
 
-## Terminals without an image protocol (e.g. Ptyxis)
+## Terminals without an image protocol (Ptyxis, COSMIC Terminal)
 
-Ptyxis/VTE does not enable Sixel, so nothing can draw real pixels there. The fallback renderer blends the logo over your terminal background and draws it with block glyphs: 2x4 sub-pixels per cell (Unicode 16 octants) when your terminal font has them (Adwaita Mono, Cascadia, ... checked with `fc-list`), otherwise 2x2 quadrants. Force one with `--glyphs octant|quadrant`.
+Ptyxis/VTE does not enable Sixel and COSMIC Terminal has no image protocol at all, so nothing can draw real pixels there. The fallback renderer blends the logo over your terminal background and draws it with block glyphs: 2x4 sub-pixels per cell (Unicode 16 octants) when your terminal font has them (Adwaita Mono, Cascadia, ... checked with `fc-list`), otherwise 2x2 quadrants. Force one with `--glyphs octant|quadrant`.
 
 ## Config
 

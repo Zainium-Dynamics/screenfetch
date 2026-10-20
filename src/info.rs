@@ -198,7 +198,16 @@ pub fn terminal_font() -> String {
                 .find_map(|l| l.strip_prefix("font_family").map(|v| v.trim().to_string()))
                 .unwrap_or_default()
         }
-        _ => gs("org.gnome.desktop.interface", "monospace-font-name"),
+        "cosmic-term" => {
+            let home = env::var("HOME").unwrap_or_default();
+            let cfg = file(&format!("{home}/.config/cosmic/com.system76.CosmicTerm/v1/font_name"));
+            let name = cfg.trim_start_matches("Some(").trim_end_matches(')').trim_matches('"').to_string();
+            if name.is_empty() { cmd("fc-match", &["monospace", "-f", "%{family[0]}"]) } else { name }
+        }
+        _ => {
+            let f = gs("org.gnome.desktop.interface", "monospace-font-name");
+            if f.is_empty() { cmd("fc-match", &["monospace", "-f", "%{family[0]}"]) } else { f }
+        }
     }
 }
 
