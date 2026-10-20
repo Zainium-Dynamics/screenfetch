@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use std::{fs, path::PathBuf};
 
-/// `~/.config/screenfetch/config.toml`; every key is optional, CLI flags win.
+/// `~/.config/config.toml`; every key is optional, CLI flags win.
 #[derive(Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
@@ -18,7 +18,7 @@ pub struct Config {
 }
 
 pub fn path() -> PathBuf {
-    crate::info::config_home().join("screenfetch/config.toml")
+    crate::info::config_home().join("screenfetch/.config/config.toml")
 }
 
 pub fn load() -> Result<Config, String> {
