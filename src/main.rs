@@ -13,6 +13,7 @@ USAGE: screenfetch [OPTIONS]
   --distro ID      look up <share>/ID.pixmap/ID_logo.svg (default: from /etc/os-release)
   --protocol P     auto | kitty | iterm2 | sixel | blocks
   --rows N         logo height in terminal rows (default 20)
+  --probe          show what the terminal reported (sixel support, cell size)
   --list           print logo search paths and embedded logos
   -h, --help
 Config: ~/.config/screenfetch/config.toml (see README)
@@ -45,6 +46,10 @@ fn main() {
             }
             "--rows" => rows = val("--rows").parse().unwrap_or_else(|_| die("--rows needs a number")),
             "--list" => list = true,
+            "--probe" => {
+                println!("sixel: {}\ncell px: {:?}\nprotocol: {proto:?}", probe.sixel, probe.cell);
+                return;
+            }
             "-h" | "--help" => return println!("{HELP}"),
             other => die(&format!("unknown option {other}")),
         }
