@@ -84,6 +84,10 @@ fn main() {
     }
 
     let svg = logo::resolve(file.as_deref(), &ids).unwrap_or_else(|e| die(&e));
+    // never taller than the window (leave room for the prompt), or the top scrolls away
+    if let Some((_, h)) = probe.size {
+        rows = rows.min(h.saturating_sub(2).max(8));
+    }
     // keep the logo square on screen whatever the cell shape is
     let cell = probe.cell.unwrap_or((9, 20));
     // terminal background for edge blending; SCREENFETCH_BG=rrggbb overrides the probe
