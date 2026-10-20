@@ -164,6 +164,10 @@ fn scan_octants(family: &str) -> bool {
     use skrifa::{FontRef, MetadataProvider};
     let mut db = usvg::fontdb::Database::new();
     db.load_system_fonts();
+    // fontdb's own list is FHS-only (/usr/share/fonts, ...): add Zainium's layers
+    for d in crate::info::SHARE_DIRS.iter().filter(|d| d.starts_with("/overlayer/")) {
+        db.load_fonts_dir(format!("{d}/fonts"));
+    }
     let query = usvg::fontdb::Query { families: &[usvg::fontdb::Family::Name(family)], ..Default::default() };
     let Some(id) = db.query(&query) else { return false };
     db.with_face_data(id, |data, index| {

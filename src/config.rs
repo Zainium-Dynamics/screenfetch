@@ -1,5 +1,5 @@
 use serde::Deserialize;
-use std::{env, fs, path::PathBuf};
+use std::{fs, path::PathBuf};
 
 /// `~/.config/screenfetch/config.toml`; every key is optional, CLI flags win.
 #[derive(Deserialize, Default)]
@@ -18,11 +18,7 @@ pub struct Config {
 }
 
 pub fn path() -> PathBuf {
-    let base = env::var_os("XDG_CONFIG_HOME")
-        .map(PathBuf::from)
-        .or_else(|| env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))
-        .unwrap_or_default();
-    base.join("screenfetch/config.toml")
+    crate::info::config_home().join("screenfetch/config.toml")
 }
 
 pub fn load() -> Result<Config, String> {

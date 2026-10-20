@@ -17,8 +17,7 @@ fn candidate_paths_ext(id: &str, ext: &str) -> Vec<PathBuf> {
         dirs.push(d);
     }
     dirs.push(BUILD_SHARE_DIR.into());
-    dirs.push("/usr/local/share".into());
-    dirs.push("/usr/share".into());
+    dirs.extend(crate::info::SHARE_DIRS.iter().map(|d| d.to_string()).filter(|d| d != BUILD_SHARE_DIR));
     dirs.into_iter()
         .map(|d| PathBuf::from(d).join(format!("{id}.pixmap")).join(format!("{id}_logo.{ext}")))
         .collect()

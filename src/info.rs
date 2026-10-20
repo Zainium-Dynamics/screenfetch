@@ -4,11 +4,24 @@ pub struct OsRelease {
     pub id: String,
     pub id_like: Vec<String>,
     pub pretty: String,
+    pub version: String,
+}
+
+/// System data dirs: Zainium's base and userland layers first, then the FHS ones.
+pub const SHARE_DIRS: &[&str] = &["/overlayer/syshub/share", "/overlayer/zexlib/union/share", "/usr/local/share", "/usr/share"];
+
+/// `$XDG_CONFIG_HOME`, else `~/.config`.
+pub fn config_home() -> std::path::PathBuf {
+    env::var_os("XDG_CONFIG_HOME")
+        .map(std::path::PathBuf::from)
+        .or_else(|| env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".config")))
+        .unwrap_or_default()
 }
 
 pub fn os_release() -> OsRelease {
-    let text = fs::read_to_string("/etc/os-release")
-        .or_else(|_| fs::read_to_string("/usr/lib/os-release"))
+    let text = ["/etc/os-release", "/overlayer/syshub/etc/os-release", "/usr/lib/os-release", "/overlayer/syshub/lib/os-release"]
+        .iter()
+        .find_map(|p| fs::read_to_string(p).ok())
         .unwrap_or_default();
     let get = |key: &str| {
         text.lines()
@@ -20,6 +33,7 @@ pub fn os_release() -> OsRelease {
         id: get("ID"),
         id_like: get("ID_LIKE").split_whitespace().map(String::from).collect(),
         pretty: get("PRETTY_NAME"),
+        version: get("VERSION"),
     }
 }
 
@@ -131,8 +145,8 @@ fn gpu() -> String {
     if v.is_empty() {
         return String::new();
     }
-    for ids in ["/usr/share/hwdata/pci.ids", "/usr/share/misc/pci.ids"] {
-        let Ok(t) = fs::read_to_string(ids) else { continue };
+    for ids in SHARE_DIRS.iter().flat_map(|d| [format!("{d}/hwdata/pci.ids"), format!("{d}/misc/pci.ids")]) {
+        let Ok(t) = fs::read_to_string(&ids) else { continue };
         let mut vendor = None;
         for l in t.lines() {
             if let Some(name) = l.strip_prefix(&v).and_then(|r| r.strip_prefix("  ")) {
@@ -193,15 +207,18 @@ pub fn terminal_font() -> String {
             if sys || own.is_empty() { gs("org.gnome.desktop.interface", "monospace-font-name") } else { own }
         }
         "kitty" => {
-            let home = env::var("HOME").unwrap_or_default();
-            file(&format!("{home}/.config/kitty/kitty.conf"))
+            file(&config_home().join("kitty/kitty.conf").to_string_lossy())
                 .lines()
                 .find_map(|l| l.strip_prefix("font_family").map(|v| v.trim().to_string()))
                 .unwrap_or_default()
         }
         "cosmic-term" => {
-            let home = env::var("HOME").unwrap_or_default();
-            let cfg = file(&format!("{home}/.config/cosmic/com.system76.CosmicTerm/v1/font_name"));
+            // the user's choice, else the system default COSMIC ships
+            let key = "cosmic/com.system76.CosmicTerm/v1/font_name";
+            let cfg = Some(file(&config_home().join(key).to_string_lossy()))
+                .filter(|s| !s.is_empty())
+                .or_else(|| SHARE_DIRS.iter().map(|d| file(&format!("{d}/{key}"))).find(|s| !s.is_empty()))
+                .unwrap_or_default();
             let name = cfg.trim_start_matches("Some(").trim_end_matches(')').trim_matches('"').to_string();
             if name.is_empty() { "monospace".to_string() } else { name }
         }
@@ -275,10 +292,7 @@ pub fn collect(os: &OsRelease) -> (String, Vec<(&'static str, String, String)>) 
     let gb = |kb: u64| gib(kb * 1024);
     let shell = env::var("SHELL").unwrap_or_default();
     let (de, wm) = de_wm();
-    let release = file("/etc/os-release")
-        .lines()
-        .find_map(|l| l.strip_prefix("VERSION=").map(|v| v.trim_matches('"').to_string()))
-        .unwrap_or_default();
+    let release = os.version.clone();
     let rows: Vec<(&'static str, &str, String)> = vec![
         ("os", "OS", format!("{} {}", os.pretty, std::env::consts::ARCH)),
         ("release", "Release", release),
