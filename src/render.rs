@@ -55,11 +55,11 @@ pub enum Logo {
     Graphic(String),
 }
 
-pub fn logo(svg: &[u8], proto: Protocol, cols: u32, rows: u32, cell: (u32, u32)) -> Result<Logo, String> {
+pub fn logo(svg: &[u8], proto: Protocol, cols: u32, rows: u32, cell: (u32, u32), bg: Option<[u8; 3]>) -> Result<Logo, String> {
     match proto {
         Protocol::Blocks => {
             // quadrant characters: 2x2 sub-pixels per cell, each supersampled 3x
-            const SS: u32 = 3;
+            const SS: u32 = 4;
             let pm = rasterize(svg, cols * 2 * SS, rows * 2 * SS, cell.0 as f32 / cell.1 as f32)?;
             let sub = |x: u32, y: u32| -> Option<[i64; 3]> {
                 let (mut a, mut c) = (0i64, [0i64; 3]);
@@ -68,13 +68,18 @@ pub fn logo(svg: &[u8], proto: Protocol, cols: u32, rows: u32, cell: (u32, u32))
                     a += p.alpha() as i64;
                     c = [c[0] + p.red() as i64, c[1] + p.green() as i64, c[2] + p.blue() as i64];
                 }
-                (a > 128 * (SS * SS) as i64).then(|| c.map(|v| (v * 255 / a).min(255)))
+                let n = (SS * SS) as i64;
+                match bg {
+                    // known background: composite over it so edges anti-alias instead of snapping on/off
+                    Some(b) => Some([0, 1, 2].map(|k| ((c[k] + b[k] as i64 * (255 * n - a) / 255) / n).min(255))),
+                    None => (a > 128 * n).then(|| c.map(|v| (v * 255 / a).min(255))),
+                }
             };
             let lines = (0..rows)
                 .map(|r| {
                     (0..cols)
                         .map(|c| {
-                            quad([sub(2 * c, 2 * r), sub(2 * c + 1, 2 * r), sub(2 * c, 2 * r + 1), sub(2 * c + 1, 2 * r + 1)])
+                            quad([sub(2 * c, 2 * r), sub(2 * c + 1, 2 * r), sub(2 * c, 2 * r + 1), sub(2 * c + 1, 2 * r + 1)], bg)
                         })
                         .collect::<String>()
                 })
@@ -119,7 +124,7 @@ pub fn logo(svg: &[u8], proto: Protocol, cols: u32, rows: u32, cell: (u32, u32))
 }
 
 /// One cell from its sub-pixels (TL, TR, BL, BR; `None` = transparent).
-fn quad(p: [Option<[i64; 3]>; 4]) -> String {
+fn quad(p: [Option<[i64; 3]>; 4], bg: Option<[u8; 3]>) -> String {
     const CH: [char; 16] = [' ', '▘', '▝', '▀', '▖', '▌', '▞', '▛', '▗', '▚', '▐', '▜', '▄', '▙', '▟', '█'];
     let mean = |mask: usize| -> Option<[i64; 3]> {
         let v: Vec<[i64; 3]> = (0..4).filter(|i| mask >> i & 1 == 1).filter_map(|i| p[i]).collect();
@@ -133,6 +138,12 @@ fn quad(p: [Option<[i64; 3]>; 4]) -> String {
             .map(|c| (0..3).map(|k| (c[k] - m[k]).pow(2)).sum::<i64>())
             .sum()
     };
+    // a cell that is just the terminal background stays a plain space
+    if let Some(b) = bg {
+        if p.iter().flatten().all(|c| (0..3).all(|k| (c[k] - b[k] as i64).abs() < 6)) {
+            return " ".into();
+        }
+    }
     let opaque = (0..4).fold(0usize, |m, i| m | (p[i].is_some() as usize) << i);
     if opaque == 0 {
         return " ".into();

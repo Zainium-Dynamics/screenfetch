@@ -6,6 +6,8 @@ pub struct Probe {
     pub sixel: bool,
     /// (width, height) of one cell in pixels
     pub cell: Option<(u32, u32)>,
+    /// terminal background colour (OSC 11)
+    pub bg: Option<[u8; 3]>,
 }
 
 pub fn probe() -> Probe {
@@ -25,7 +27,7 @@ pub fn probe() -> Probe {
         let mut raw = old;
         libc::cfmakeraw(&mut raw);
         libc::tcsetattr(fd, libc::TCSANOW, &raw);
-        let reply = query(fd, b"\x1b[16t\x1b[c", Duration::from_millis(200));
+        let reply = query(fd, b"\x1b[16t\x1b]11;?\x1b\\\x1b[c", Duration::from_millis(200));
         libc::tcsetattr(fd, libc::TCSANOW, &old);
         let mut probe = parse(&reply);
         if probe.cell.is_none() {
@@ -70,7 +72,12 @@ fn parse(reply: &str) -> Probe {
         .find("\x1b[?")
         .and_then(|i| reply[i + 3..].split('c').next())
         .is_some_and(|a| a.split(';').any(|x| x == "4"));
-    Probe { sixel, cell }
+    let bg = reply.find("\x1b]11;rgb:").and_then(|i| {
+        let body = reply[i + 9..].split(['\x1b', '\x07']).next()?;
+        let mut ch = body.split('/').map(|h| u32::from_str_radix(h, 16).ok().map(|v| (v * 255 / ((1u32 << (4 * h.len())) - 1)) as u8));
+        Some([ch.next()??, ch.next()??, ch.next()??])
+    });
+    Probe { sixel, cell, bg }
 }
 
 #[cfg(test)]
@@ -81,5 +88,7 @@ mod tests {
         assert_eq!(p.cell, Some((9, 20)));
         assert!(p.sixel);
         assert!(!super::parse("\x1b[?62;22c").sixel);
+        let p = super::parse("\x1b]11;rgb:2323/2626/3434\x1b\\\x1b[?62c");
+        assert_eq!(p.bg, Some([35, 38, 52]));
     }
 }

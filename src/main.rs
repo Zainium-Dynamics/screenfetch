@@ -17,7 +17,8 @@ USAGE: screenfetch [OPTIONS]
   --list           print logo search paths and embedded logos
   -h, --help
 Config: ~/.config/screenfetch/config.toml (see README)
-Env: SCREENFETCH_SHARE_DIR overrides the share dir searched at runtime.";
+Env: SCREENFETCH_SHARE_DIR overrides the share dir searched at runtime.
+     SCREENFETCH_BG=rrggbb sets the background used to smooth logo edges (auto-detected normally).";
 
 const KEYS: &[&str] = &[
     "os", "release", "host", "kernel", "uptime", "shell", "display", "de", "wm", "theme", "icons", "font", "cursor",
@@ -81,8 +82,14 @@ fn main() {
     let svg = logo::resolve(file.as_deref(), &ids).unwrap_or_else(|e| die(&e));
     // keep the logo square on screen whatever the cell shape is
     let cell = probe.cell.unwrap_or((9, 20));
+    // terminal background for edge blending; SCREENFETCH_BG=rrggbb overrides the probe
+    let bg = std::env::var("SCREENFETCH_BG")
+        .ok()
+        .and_then(|h| u32::from_str_radix(h.trim_start_matches('#'), 16).ok())
+        .map(|v| [(v >> 16) as u8, (v >> 8) as u8, v as u8])
+        .or(probe.bg);
     let cols = (rows * cell.1 + cell.0 / 2) / cell.0;
-    let art = render::logo(&svg, proto, cols, rows, cell).unwrap_or_else(|e| die(&e));
+    let art = render::logo(&svg, proto, cols, rows, cell, bg).unwrap_or_else(|e| die(&e));
 
     let (title, rows_info) = info::collect(&os);
     let col = cfg.color.as_deref().map_or(36, |c| config::ansi_color(c).unwrap_or_else(|| die("unknown colour in config")));
