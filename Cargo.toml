@@ -15,4 +15,5 @@ libc = "0.2.191"
 resvg = "0.48.1"
 serde = { version = "1.0.229", features = ["derive"] }
 sixel-enc = { version = "0.1.0", path = "crates/sixel-enc" }
+skrifa = "0.44"
 toml = "1.1.8"

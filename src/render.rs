@@ -130,15 +130,49 @@ pub fn logo(svg: &[u8], proto: Protocol, cols: u32, rows: u32, cell: (u32, u32),
     }
 }
 
-/// Whether `font` (a "Family 11" style name) has every octant glyph, so 2x4 cells will draw.
+/// Whether `font` (a "Family 11" style name) has every octant glyph we use, read straight from
+/// the installed font file so no external tool is needed.
 pub fn font_has_octants(font: &str) -> bool {
     let family = font.trim_end_matches(|c: char| c.is_ascii_digit() || c == '.' || c == ' ');
-    !family.is_empty()
-        && std::process::Command::new("fc-list")
-            .arg(format!("{family}:charset=1cd00 1cde5 1cea8 1fbe6 1fb82"))
-            .arg("family")
-            .output()
-            .is_ok_and(|o| !o.stdout.is_empty())
+    if family.is_empty() {
+        return false;
+    }
+    // scanning every system font is slow, so remember the answer per family
+    let cache = std::env::var_os("XDG_CACHE_HOME")
+        .map(std::path::PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".cache")))
+        .map(|d| d.join("screenfetch/octants"));
+    let line = |ok: bool| format!("{family}\t{}", ok as u8);
+    if let Some(text) = cache.as_ref().and_then(|c| std::fs::read_to_string(c).ok()) {
+        for l in text.lines() {
+            if l.starts_with(&format!("{family}\t")) {
+                return l.ends_with('1');
+            }
+        }
+    }
+    let ok = scan_octants(family);
+    if let Some(c) = &cache {
+        let _ = std::fs::create_dir_all(c.parent().unwrap());
+        let mut text = std::fs::read_to_string(c).unwrap_or_default();
+        text.push_str(&(line(ok) + "\n"));
+        let _ = std::fs::write(c, text);
+    }
+    ok
+}
+
+fn scan_octants(family: &str) -> bool {
+    use skrifa::{FontRef, MetadataProvider};
+    let mut db = usvg::fontdb::Database::new();
+    db.load_system_fonts();
+    let query = usvg::fontdb::Query { families: &[usvg::fontdb::Family::Name(family)], ..Default::default() };
+    let Some(id) = db.query(&query) else { return false };
+    db.with_face_data(id, |data, index| {
+        let font = FontRef::from_index(data, index).ok()?;
+        let map = font.charmap();
+        Some(['\u{1CD00}', '\u{1CDE5}', '\u{1CEA8}', '\u{1FBE6}', '\u{1FB82}'].iter().all(|&c| map.map(c).is_some()))
+    })
+    .flatten()
+    .unwrap_or(false)
 }
 
 /// One cell from its sub-pixels (row-major, 2 wide; `None` = transparent): picks the two-colour

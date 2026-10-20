@@ -405,6 +405,7 @@ dependencies = [
  "resvg",
  "serde",
  "sixel-enc",
+ "skrifa",
  "toml",
 ]
 

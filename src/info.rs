@@ -157,30 +157,31 @@ fn gib(bytes: u64) -> String {
     format!("{:.2} GiB", bytes as f64 / (1u64 << 30) as f64)
 }
 
-fn disk_usage(path: &str) -> String {
-    let out = cmd("df", &["-B1", "--output=size,used,fstype", path]);
-    let f: Vec<&str> = out.lines().nth(1).unwrap_or("").split_whitespace().collect();
-    match f[..] {
-        [size, used, fs] => {
-            let (s, u): (u64, u64) = (size.parse().unwrap_or(0), used.parse().unwrap_or(0));
-            let ext = if path.starts_with("/run/media/") || path.starts_with("/media/") { " [External]" } else { "" };
-            format!("{} / {} ({}%) - {fs}{ext}", gib(u), gib(s), u * 100 / s.max(1))
-        }
-        _ => String::new(),
+fn disk_usage(path: &str, fstype: &str) -> String {
+    let Ok(c) = std::ffi::CString::new(path) else { return String::new() };
+    let mut st: libc::statvfs = unsafe { std::mem::zeroed() };
+    if unsafe { libc::statvfs(c.as_ptr(), &mut st) } != 0 {
+        return String::new();
     }
+    let size = st.f_blocks as u64 * st.f_frsize as u64;
+    let used = size - st.f_bfree as u64 * st.f_frsize as u64;
+    let ext = if path.starts_with("/run/media/") || path.starts_with("/media/") { " [External]" } else { "" };
+    format!("{} / {} ({}%) - {fstype}{ext}", gib(used), gib(size), used * 100 / size.max(1))
 }
 
 /// `/` plus user-visible mounts (USB drives and friends).
 fn disks() -> Vec<(String, String)> {
-    let mut paths = vec!["/".to_string()];
+    let mut mounts: Vec<(String, String)> = Vec::new();
     for l in file("/proc/mounts").lines() {
-        let Some(mp) = l.split_whitespace().nth(1) else { continue };
+        let f: Vec<&str> = l.split_whitespace().collect();
+        let [_, mp, fs, ..] = f[..] else { continue };
         let mp = mp.replace("\\040", " ");
-        if ["/run/media/", "/media/", "/mnt/"].iter().any(|p| mp.starts_with(p)) && !paths.contains(&mp) {
-            paths.push(mp);
+        let wanted = mp == "/" || ["/run/media/", "/media/", "/mnt/"].iter().any(|p| mp.starts_with(p));
+        if wanted && !mounts.iter().any(|(m, _)| *m == mp) {
+            mounts.push((mp, fs.to_string()));
         }
     }
-    paths.into_iter().map(|p| (format!("Disk ({p})"), disk_usage(&p))).collect()
+    mounts.into_iter().map(|(p, fs)| (format!("Disk ({p})"), disk_usage(&p, &fs))).collect()
 }
 
 pub fn terminal_font() -> String {
@@ -202,23 +203,37 @@ pub fn terminal_font() -> String {
             let home = env::var("HOME").unwrap_or_default();
             let cfg = file(&format!("{home}/.config/cosmic/com.system76.CosmicTerm/v1/font_name"));
             let name = cfg.trim_start_matches("Some(").trim_end_matches(')').trim_matches('"').to_string();
-            if name.is_empty() { cmd("fc-match", &["monospace", "-f", "%{family[0]}"]) } else { name }
+            if name.is_empty() { "monospace".to_string() } else { name }
         }
         _ => {
             let f = gs("org.gnome.desktop.interface", "monospace-font-name");
-            if f.is_empty() { cmd("fc-match", &["monospace", "-f", "%{family[0]}"]) } else { f }
+            if f.is_empty() { "monospace".to_string() } else { f }
         }
     }
 }
 
 fn local_ip() -> String {
-    for l in cmd("ip", &["-4", "-o", "addr", "show", "scope", "global"]).lines() {
-        let f: Vec<&str> = l.split_whitespace().collect();
-        if let (Some(ifc), Some(addr)) = (f.get(1), f.get(3)) {
-            return format!("{ifc}: {addr}");
+    unsafe {
+        let mut list: *mut libc::ifaddrs = std::ptr::null_mut();
+        if libc::getifaddrs(&mut list) != 0 {
+            return String::new();
         }
+        let mut found = String::new();
+        let mut cur = list;
+        while !cur.is_null() && found.is_empty() {
+            let a = &*cur;
+            let up = a.ifa_flags & libc::IFF_UP as u32 != 0 && a.ifa_flags & libc::IFF_LOOPBACK as u32 == 0;
+            if up && !a.ifa_addr.is_null() && (*a.ifa_addr).sa_family as i32 == libc::AF_INET {
+                let ip = u32::from_be((*(a.ifa_addr as *const libc::sockaddr_in)).sin_addr.s_addr);
+                let mask = u32::from_be((*(a.ifa_netmask as *const libc::sockaddr_in)).sin_addr.s_addr);
+                let name = std::ffi::CStr::from_ptr(a.ifa_name).to_string_lossy();
+                found = format!("{name}: {}/{}", std::net::Ipv4Addr::from(ip), mask.count_ones());
+            }
+            cur = a.ifa_next;
+        }
+        libc::freeifaddrs(list);
+        found
     }
-    String::new()
 }
 
 fn battery() -> String {
