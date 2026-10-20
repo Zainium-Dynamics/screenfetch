@@ -11,6 +11,15 @@ cargo build --release
 ./target/release/screenfetch
 ```
 
+## Install
+
+```sh
+cargo install --path .
+screenfetch
+```
+
+After this just type `screenfetch` in any terminal.
+
 ## Logo lookup
 
 For each id (`ID`, then `ID_LIKE` from `/etc/os-release`, or `--distro`), it looks for
@@ -60,6 +69,8 @@ protocol = "auto"        # auto | kitty | iterm2 | sixel | blocks
 rows     = 10
 color    = "cyan"        # black red green yellow blue magenta cyan white
 show     = ["os", "kernel", "uptime", "shell", "cpu", "memory"]
+# keys: os release host kernel uptime shell display de wm theme icons font
+#       cursor terminal cpu gpu memory swap disk ip battery locale
 ```
 
 ## Crates
