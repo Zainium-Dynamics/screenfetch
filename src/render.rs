@@ -35,13 +35,16 @@ impl Protocol {
     }
 }
 
-pub fn rasterize(svg: &[u8], w: u32, h: u32) -> Result<tiny_skia::Pixmap, String> {
+/// Draw the SVG centred in a `w` x `h` pixel grid whose pixels are `aspect` (width / height) shaped.
+pub fn rasterize(svg: &[u8], w: u32, h: u32, aspect: f32) -> Result<tiny_skia::Pixmap, String> {
     let tree = usvg::Tree::from_data(svg, &usvg::Options::default()).map_err(|e| e.to_string())?;
     let size = tree.size();
-    let scale = (w as f32 / size.width()).min(h as f32 / size.height());
-    let (dx, dy) = ((w as f32 - size.width() * scale) / 2.0, (h as f32 - size.height() * scale) / 2.0);
+    // fit in physical units (x stretched by `aspect`), then convert back to pixels
+    let phys = (w as f32 * aspect / size.width()).min(h as f32 / size.height());
+    let (sx, sy) = (phys / aspect, phys);
+    let (dx, dy) = ((w as f32 - size.width() * sx) / 2.0, (h as f32 - size.height() * sy) / 2.0);
     let mut pm = tiny_skia::Pixmap::new(w, h).ok_or("bad size")?;
-    resvg::render(&tree, tiny_skia::Transform::from_scale(scale, scale).post_translate(dx, dy), &mut pm.as_mut());
+    resvg::render(&tree, tiny_skia::Transform::from_row(sx, 0.0, 0.0, sy, dx, dy), &mut pm.as_mut());
     Ok(pm)
 }
 
@@ -57,7 +60,7 @@ pub fn logo(svg: &[u8], proto: Protocol, cols: u32, rows: u32, cell: (u32, u32))
         Protocol::Blocks => {
             // quadrant characters: 2x2 sub-pixels per cell, each supersampled 3x
             const SS: u32 = 3;
-            let pm = rasterize(svg, cols * 2 * SS, rows * 2 * SS)?;
+            let pm = rasterize(svg, cols * 2 * SS, rows * 2 * SS, cell.0 as f32 / cell.1 as f32)?;
             let sub = |x: u32, y: u32| -> Option<[i64; 3]> {
                 let (mut a, mut c) = (0i64, [0i64; 3]);
                 for (dx, dy) in (0..SS).flat_map(|dy| (0..SS).map(move |dx| (dx, dy))) {
@@ -80,7 +83,7 @@ pub fn logo(svg: &[u8], proto: Protocol, cols: u32, rows: u32, cell: (u32, u32))
         }
         Protocol::Sixel => {
             // cursor is saved/restored around the image
-            let pm = rasterize(svg, cols * cell.0, rows * cell.1)?;
+            let pm = rasterize(svg, cols * cell.0, rows * cell.1, 1.0)?;
             let rgba: Vec<u8> = pm
                 .pixels()
                 .iter()
@@ -94,7 +97,7 @@ pub fn logo(svg: &[u8], proto: Protocol, cols: u32, rows: u32, cell: (u32, u32))
         }
         Protocol::Kitty | Protocol::Iterm2 => {
             let side = 40 * rows; // plenty of pixels; the terminal scales to the cell box
-            let png = B64.encode(rasterize(svg, side, side)?.encode_png().map_err(|e| e.to_string())?);
+            let png = B64.encode(rasterize(svg, side, side, 1.0)?.encode_png().map_err(|e| e.to_string())?);
             if proto == Protocol::Iterm2 {
                 return Ok(Logo::Graphic(format!(
                     "\x1b]1337;File=inline=1;width={cols};height={rows};preserveAspectRatio=1;doNotMoveCursor=1:{png}\x07"
