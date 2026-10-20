@@ -1,8 +1,11 @@
-//! Ask the terminal what it can do: cell size (`CSI 16 t`) and Sixel support (DA1 attribute 4).
+//! Ask the terminal what it can do: kitty graphics (a 1x1 query image), cell size (`CSI 16 t`)
+//! and Sixel support (DA1 attribute 4).
 use std::{os::fd::RawFd, time::Duration};
 
 #[derive(Default)]
 pub struct Probe {
+    /// answered the kitty graphics query
+    pub kitty: bool,
     pub sixel: bool,
     /// (width, height) of one cell in pixels
     pub cell: Option<(u32, u32)>,
@@ -39,7 +42,12 @@ fn probe_tty() -> Probe {
         let mut raw = old;
         libc::cfmakeraw(&mut raw);
         libc::tcsetattr(fd, libc::TCSANOW, &raw);
-        let reply = query(fd, b"\x1b[16t\x1b]11;?\x1b\\\x1b[c", Duration::from_millis(200));
+        // terminals without kitty graphics ignore the APC; DA1 still comes last
+        let reply = query(
+            fd,
+            b"\x1b_Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA\x1b\\\x1b[16t\x1b]11;?\x1b\\\x1b[c",
+            Duration::from_millis(200),
+        );
         libc::tcsetattr(fd, libc::TCSANOW, &old);
         let mut probe = parse(&reply);
         if probe.cell.is_none() {
@@ -89,7 +97,8 @@ fn parse(reply: &str) -> Probe {
         let mut ch = body.split('/').map(|h| u32::from_str_radix(h, 16).ok().map(|v| (v * 255 / ((1u32 << (4 * h.len())) - 1)) as u8));
         Some([ch.next()??, ch.next()??, ch.next()??])
     });
-    Probe { sixel, cell, bg, size: None }
+    let kitty = reply.contains("\x1b_Gi=31;OK");
+    Probe { kitty, sixel, cell, bg, size: None }
 }
 
 #[cfg(test)]
@@ -102,5 +111,7 @@ mod tests {
         assert!(!super::parse("\x1b[?62;22c").sixel);
         let p = super::parse("\x1b]11;rgb:2323/2626/3434\x1b\\\x1b[?62c");
         assert_eq!(p.bg, Some([35, 38, 52]));
+        assert!(!p.kitty);
+        assert!(super::parse("\x1b_Gi=31;OK\x1b\\\x1b[?62c").kitty);
     }
 }

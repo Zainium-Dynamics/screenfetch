@@ -20,10 +20,10 @@ impl Protocol {
         }
     }
 
-    pub fn detect(sixel_probed: bool) -> Self {
+    pub fn detect(kitty_probed: bool, sixel_probed: bool) -> Self {
         let var = |k: &str| std::env::var(k).unwrap_or_default();
         let (term, prog) = (var("TERM"), var("TERM_PROGRAM"));
-        if var("KITTY_WINDOW_ID") != "" || term == "xterm-kitty" || prog == "ghostty" || term == "xterm-ghostty" {
+        if kitty_probed || var("KITTY_WINDOW_ID") != "" || term == "xterm-kitty" || prog == "ghostty" || term == "xterm-ghostty" {
             Self::Kitty
         } else if prog == "iTerm.app" || prog == "WezTerm" {
             Self::Iterm2

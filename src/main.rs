@@ -32,7 +32,7 @@ fn main() {
     let probe = term::probe();
     let mut args = std::env::args().skip(1);
     let mut proto = match cfg.protocol.as_deref() {
-        None | Some("auto") => Protocol::detect(probe.sixel),
+        None | Some("auto") => Protocol::detect(probe.kitty, probe.sixel),
         Some(p) => Protocol::parse(p).unwrap_or_else(|| die("unknown protocol in config")),
     };
     let mut glyphs: Option<String> = cfg.glyphs.clone();
@@ -52,7 +52,7 @@ fn main() {
             "--glyphs" => glyphs = Some(val("--glyphs")),
             "--list" => list = true,
             "--probe" => {
-                println!("sixel: {}\ncell px: {:?}\nprotocol: {proto:?}", probe.sixel, probe.cell);
+                println!("kitty: {}\nsixel: {}\ncell px: {:?}\nprotocol: {proto:?}", probe.kitty, probe.sixel, probe.cell);
                 return;
             }
             "-h" | "--help" => return println!("{HELP}"),
