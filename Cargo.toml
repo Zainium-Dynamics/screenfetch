@@ -1,0 +1,17 @@
+[workspace]
+members = ["crates/sixel-enc"]
+
+[package]
+name = "screenfetch"
+version = "0.1.0"
+edition = "2024"
+description = "Fast system info with an SVG logo rendered right in the terminal"
+license = "MIT"
+repository = "https://github.com/Zainium-Dynamics/screenfetch"
+
+[dependencies]
+base64 = "0.23.1"
+resvg = "0.48.1"
+serde = { version = "1.0.229", features = ["derive"] }
+sixel-enc = { version = "0.1.0", path = "crates/sixel-enc" }
+toml = "1.1.8"

@@ -1,0 +1,6 @@
+[package]
+name = "sixel-enc"
+version = "0.1.0"
+edition = "2024"
+description = "Dependency-free Sixel encoder (RGBA -> DECSIXEL), format ported from libsixel's tosixel.c"
+license = "MIT"
