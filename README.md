@@ -2,6 +2,8 @@
 
 A small, fast system-info tool that draws your distro's **SVG logo** straight in the terminal.
 
+![screenfetch in kitty](docs/screenshot.png)
+
 Terminal graphics: kitty / ghostty, iTerm2 / WezTerm, Sixel (foot, mlterm), with a truecolor half-block fallback that works everywhere.
 
 ## Build
