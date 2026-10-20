@@ -164,7 +164,27 @@ fn gpu() -> String {
             }
         }
     }
-    format!("{v}:{d}")
+    // no pci.ids (Zainium's base has none): vendor name and the kernel driver
+    let vendor = match v.as_str() {
+        "8086" => "Intel",
+        "1002" => "AMD",
+        "10de" => "NVIDIA",
+        "1af4" => "Virtio",
+        "15ad" => "VMware",
+        "80ee" => "VirtualBox",
+        "1234" => "QEMU",
+        _ => "",
+    };
+    let driver = fs::read_link(format!("{card}/driver"))
+        .ok()
+        .and_then(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
+        .unwrap_or_default();
+    match (vendor, driver.is_empty()) {
+        ("", true) => format!("{v}:{d}"),
+        ("", false) => format!("{v}:{d} ({driver})"),
+        (vn, true) => format!("{vn} {d}"),
+        (vn, false) => format!("{vn} ({driver})"),
+    }
 }
 
 fn gib(bytes: u64) -> String {
@@ -185,17 +205,39 @@ fn disk_usage(path: &str, fstype: &str) -> String {
 
 /// `/` plus user-visible mounts (USB drives and friends).
 fn disks() -> Vec<(String, String)> {
-    let mut mounts: Vec<(String, String)> = Vec::new();
-    for l in file("/proc/mounts").lines() {
-        let f: Vec<&str> = l.split_whitespace().collect();
-        let [_, mp, fs, ..] = f[..] else { continue };
-        let mp = mp.replace("\\040", " ");
+    const PSEUDO: &[&str] = &["rootfs", "tmpfs", "ramfs", "overlay", "erofs", "squashfs"];
+    let table: Vec<(String, String, String)> = file("/proc/mounts")
+        .lines()
+        .filter_map(|l| {
+            let f: Vec<&str> = l.split_whitespace().collect();
+            let [src, mp, fs, ..] = f[..] else { return None };
+            Some((src.to_string(), mp.replace("\\040", " "), fs.to_string()))
+        })
+        .collect();
+    // (label, path to measure, fs type)
+    let mut mounts: Vec<(String, String, String)> = Vec::new();
+    for (_, mp, fs) in &table {
         let wanted = mp == "/" || ["/run/media/", "/media/", "/mnt/"].iter().any(|p| mp.starts_with(p));
-        if wanted && !mounts.iter().any(|(m, _)| *m == mp) {
-            mounts.push((mp, fs.to_string()));
+        if wanted && !mounts.iter().any(|(m, _, _)| m == mp) {
+            mounts.push((mp.clone(), mp.clone(), fs.clone()));
         }
     }
-    mounts.into_iter().map(|(p, fs)| (format!("Disk ({p})"), disk_usage(&p, &fs))).collect()
+    // Zainium keeps the initramfs' rootfs as `/` and runs from the disk mounted under /overlayer
+    // and /home: measure that disk for `/`
+    if let Some(root) = mounts.iter_mut().find(|(m, _, fs)| m == "/" && PSEUDO.contains(&fs.as_str())) {
+        let disk = ["/overlayer/zexlib", "/home", "/overlayer"]
+            .iter()
+            .find_map(|want| table.iter().find(|(src, mp, _)| mp == want && src.starts_with("/dev/")));
+        if let Some((_, mp, fs)) = disk {
+            root.1 = mp.clone();
+            root.2 = fs.clone();
+        }
+    }
+    mounts
+        .into_iter()
+        .map(|(label, path, fs)| (format!("Disk ({label})"), disk_usage(&path, &fs)))
+        .filter(|(_, v)| !v.starts_with("0.00 GiB / 0.00 GiB"))
+        .collect()
 }
 
 pub fn terminal_font() -> String {
