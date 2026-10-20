@@ -8,6 +8,8 @@ pub struct Probe {
     pub cell: Option<(u32, u32)>,
     /// terminal background colour (OSC 11)
     pub bg: Option<[u8; 3]>,
+    /// window size in cells (cols, rows)
+    pub size: Option<(u32, u32)>,
 }
 
 pub fn probe() -> Probe {
@@ -15,6 +17,16 @@ pub fn probe() -> Probe {
         if libc::isatty(1) == 0 {
             return Probe::default();
         }
+        let mut ws: libc::winsize = std::mem::zeroed();
+        let size = (libc::ioctl(1, libc::TIOCGWINSZ, &mut ws) == 0 && ws.ws_col > 0).then(|| (ws.ws_col as u32, ws.ws_row as u32));
+        let mut p = probe_tty();
+        p.size = size;
+        p
+    }
+}
+
+fn probe_tty() -> Probe {
+    unsafe {
         let fd = libc::open(c"/dev/tty".as_ptr(), libc::O_RDWR | libc::O_NOCTTY);
         if fd < 0 {
             return Probe::default();
@@ -77,7 +89,7 @@ fn parse(reply: &str) -> Probe {
         let mut ch = body.split('/').map(|h| u32::from_str_radix(h, 16).ok().map(|v| (v * 255 / ((1u32 << (4 * h.len())) - 1)) as u8));
         Some([ch.next()??, ch.next()??, ch.next()??])
     });
-    Probe { sixel, cell, bg }
+    Probe { sixel, cell, bg, size: None }
 }
 
 #[cfg(test)]

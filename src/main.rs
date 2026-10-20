@@ -119,6 +119,11 @@ fn main() {
         None => text.extend(rows_info.iter().map(|(_, l, v)| format!("\x1b[1;{col}m{l}\x1b[0m: {v}"))),
     }
 
+    // never let a line wrap: it would shear the logo (long mount paths, narrow windows)
+    if let Some((w, _)) = probe.size {
+        let avail = (w as usize).saturating_sub(cols as usize + 2);
+        text.iter_mut().for_each(|l| *l = clip(l, avail));
+    }
     let height = (rows as usize).max(text.len());
     let mut out = String::new();
     match art {
@@ -143,4 +148,39 @@ fn main() {
 fn die(msg: &str) -> ! {
     eprintln!("screenfetch: {msg}");
     std::process::exit(1);
+}
+
+/// Cut `s` to `max` visible characters (ANSI colour codes don't count), ending with `…`.
+fn clip(s: &str, max: usize) -> String {
+    let visible = |s: &str| {
+        let (mut n, mut esc) = (0, false);
+        for c in s.chars() {
+            match (esc, c) {
+                (_, '\x1b') => esc = true,
+                (true, 'm') => esc = false,
+                (false, _) => n += 1,
+                _ => {}
+            }
+        }
+        n
+    };
+    if visible(s) <= max {
+        return s.to_string();
+    }
+    let (mut out, mut n, mut esc) = (String::new(), 0, false);
+    for c in s.chars() {
+        match (esc, c) {
+            (_, '\x1b') => esc = true,
+            (true, 'm') => esc = false,
+            (false, _) => {
+                if n + 1 >= max {
+                    break;
+                }
+                n += 1;
+            }
+            _ => {}
+        }
+        out.push(c);
+    }
+    out + "…\x1b[0m"
 }
