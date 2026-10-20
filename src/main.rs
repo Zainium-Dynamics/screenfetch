@@ -1,6 +1,7 @@
 mod config;
 mod info;
 mod logo;
+mod octants;
 mod render;
 mod term;
 
@@ -12,6 +13,7 @@ USAGE: screenfetch [OPTIONS]
   --logo FILE      render this SVG
   --distro ID      look up <share>/ID.pixmap/ID_logo.svg (default: zainium; `auto` = from /etc/os-release)
   --protocol P     auto | kitty | iterm2 | sixel | blocks
+  --glyphs G       auto | quadrant | octant: block glyph set for the fallback renderer
   --rows N         logo height in terminal rows (default 20)
   --probe          show what the terminal reported (sixel support, cell size)
   --list           print logo search paths and embedded logos
@@ -33,6 +35,7 @@ fn main() {
         None | Some("auto") => Protocol::detect(probe.sixel),
         Some(p) => Protocol::parse(p).unwrap_or_else(|| die("unknown protocol in config")),
     };
+    let mut glyphs: Option<String> = cfg.glyphs.clone();
     let (mut file, mut distro, mut rows, mut list) = (cfg.logo.clone(), cfg.distro.clone(), cfg.rows.unwrap_or(20), false);
     while let Some(a) = args.next() {
         let mut val = |n: &str| args.next().unwrap_or_else(|| die(&format!("{n} needs a value")));
@@ -46,6 +49,7 @@ fn main() {
                 }
             }
             "--rows" => rows = val("--rows").parse().unwrap_or_else(|_| die("--rows needs a number")),
+            "--glyphs" => glyphs = Some(val("--glyphs")),
             "--list" => list = true,
             "--probe" => {
                 println!("sixel: {}\ncell px: {:?}\nprotocol: {proto:?}", probe.sixel, probe.cell);
@@ -88,8 +92,15 @@ fn main() {
         .and_then(|h| u32::from_str_radix(h.trim_start_matches('#'), 16).ok())
         .map(|v| [(v >> 16) as u8, (v >> 8) as u8, v as u8])
         .or(probe.bg);
+    // 2x4 octant cells look best, but only if the terminal font has the glyphs
+    let octants = match glyphs.as_deref() {
+        Some("octant") => true,
+        Some("quadrant") => false,
+        None | Some("auto") => render::font_has_octants(&info::terminal_font()),
+        Some(_) => die("--glyphs: auto | quadrant | octant"),
+    };
     let cols = (rows * cell.1 + cell.0 / 2) / cell.0;
-    let art = render::logo(&svg, proto, cols, rows, cell, bg).unwrap_or_else(|e| die(&e));
+    let art = render::logo(&svg, proto, cols, rows, cell, bg, octants).unwrap_or_else(|e| die(&e));
 
     let (title, rows_info) = info::collect(&os);
     let col = cfg.color.as_deref().map_or(36, |c| config::ansi_color(c).unwrap_or_else(|| die("unknown colour in config")));

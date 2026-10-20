@@ -55,20 +55,22 @@ pub enum Logo {
     Graphic(String),
 }
 
-pub fn logo(svg: &[u8], proto: Protocol, cols: u32, rows: u32, cell: (u32, u32), bg: Option<[u8; 3]>) -> Result<Logo, String> {
+pub fn logo(svg: &[u8], proto: Protocol, cols: u32, rows: u32, cell: (u32, u32), bg: Option<[u8; 3]>, octants: bool) -> Result<Logo, String> {
     match proto {
         Protocol::Blocks => {
-            // quadrant characters: 2x2 sub-pixels per cell, each supersampled 3x
-            const SS: u32 = 4;
-            let pm = rasterize(svg, cols * 2 * SS, rows * 2 * SS, cell.0 as f32 / cell.1 as f32)?;
+            // each cell is gx x gy sub-pixels (2x2 quadrants or 2x4 octants), supersampled
+            let (gx, gy) = if octants { (2, 4) } else { (2, 2) };
+            let ss: u32 = if octants { 3 } else { 4 };
+            let aspect = (cell.0 as f32 / gx as f32) / (cell.1 as f32 / gy as f32);
+            let pm = rasterize(svg, cols * gx * ss, rows * gy * ss, aspect)?;
             let sub = |x: u32, y: u32| -> Option<[i64; 3]> {
                 let (mut a, mut c) = (0i64, [0i64; 3]);
-                for (dx, dy) in (0..SS).flat_map(|dy| (0..SS).map(move |dx| (dx, dy))) {
-                    let p = pm.pixel(x * SS + dx, y * SS + dy).unwrap();
+                for (dx, dy) in (0..ss).flat_map(|dy| (0..ss).map(move |dx| (dx, dy))) {
+                    let p = pm.pixel(x * ss + dx, y * ss + dy).unwrap();
                     a += p.alpha() as i64;
                     c = [c[0] + p.red() as i64, c[1] + p.green() as i64, c[2] + p.blue() as i64];
                 }
-                let n = (SS * SS) as i64;
+                let n = (ss * ss) as i64;
                 match bg {
                     // known background: composite over it so edges anti-alias instead of snapping on/off
                     Some(b) => Some([0, 1, 2].map(|k| ((c[k] + b[k] as i64 * (255 * n - a) / 255) / n).min(255))),
@@ -79,7 +81,8 @@ pub fn logo(svg: &[u8], proto: Protocol, cols: u32, rows: u32, cell: (u32, u32),
                 .map(|r| {
                     (0..cols)
                         .map(|c| {
-                            quad([sub(2 * c, 2 * r), sub(2 * c + 1, 2 * r), sub(2 * c, 2 * r + 1), sub(2 * c + 1, 2 * r + 1)], bg)
+                            let p: Vec<_> = (0..gx * gy).map(|i| sub(c * gx + i % gx, r * gy + i / gx)).collect();
+                            glyph_cell(&p, bg, octants)
                         })
                         .collect::<String>()
                 })
@@ -123,16 +126,31 @@ pub fn logo(svg: &[u8], proto: Protocol, cols: u32, rows: u32, cell: (u32, u32),
     }
 }
 
-/// One cell from its sub-pixels (TL, TR, BL, BR; `None` = transparent).
-fn quad(p: [Option<[i64; 3]>; 4], bg: Option<[u8; 3]>) -> String {
-    const CH: [char; 16] = [' ', '▘', '▝', '▀', '▖', '▌', '▞', '▛', '▗', '▚', '▐', '▜', '▄', '▙', '▟', '█'];
+/// Whether `font` (a "Family 11" style name) has every octant glyph, so 2x4 cells will draw.
+pub fn font_has_octants(font: &str) -> bool {
+    let family = font.trim_end_matches(|c: char| c.is_ascii_digit() || c == '.' || c == ' ');
+    !family.is_empty()
+        && std::process::Command::new("fc-list")
+            .arg(format!("{family}:charset=1cd00 1cde5 1cea8 1fbe6 1fb82"))
+            .arg("family")
+            .output()
+            .is_ok_and(|o| !o.stdout.is_empty())
+}
+
+/// One cell from its sub-pixels (row-major, 2 wide; `None` = transparent): picks the two-colour
+/// split with the least error and the glyph that draws it.
+fn glyph_cell(p: &[Option<[i64; 3]>], bg: Option<[u8; 3]>, octants: bool) -> String {
+    const QUAD: [char; 16] = [' ', '▘', '▝', '▀', '▖', '▌', '▞', '▛', '▗', '▚', '▐', '▜', '▄', '▙', '▟', '█'];
+    let n = p.len();
+    let full = (1usize << n) - 1;
+    let glyph = |m: usize| if octants { crate::octants::OCTANT[m] } else { QUAD[m] };
     let mean = |mask: usize| -> Option<[i64; 3]> {
-        let v: Vec<[i64; 3]> = (0..4).filter(|i| mask >> i & 1 == 1).filter_map(|i| p[i]).collect();
+        let v: Vec<[i64; 3]> = (0..n).filter(|i| mask >> i & 1 == 1).filter_map(|i| p[i]).collect();
         (!v.is_empty()).then(|| [0, 1, 2].map(|k| v.iter().map(|c| c[k]).sum::<i64>() / v.len() as i64))
     };
-    let err = |mask: usize, m: Option<[i64; 3]>| -> i64 {
-        let Some(m) = m else { return 0 };
-        (0..4)
+    let err = |mask: usize| -> i64 {
+        let Some(m) = mean(mask) else { return 0 };
+        (0..n)
             .filter(|i| mask >> i & 1 == 1)
             .filter_map(|i| p[i])
             .map(|c| (0..3).map(|k| (c[k] - m[k]).pow(2)).sum::<i64>())
@@ -144,29 +162,32 @@ fn quad(p: [Option<[i64; 3]>; 4], bg: Option<[u8; 3]>) -> String {
             return " ".into();
         }
     }
-    let opaque = (0..4).fold(0usize, |m, i| m | (p[i].is_some() as usize) << i);
+    let opaque = (0..n).fold(0usize, |m, i| m | (p[i].is_some() as usize) << i);
     if opaque == 0 {
         return " ".into();
     }
     // transparent sub-pixels must stay background-coloured: draw only the opaque ones
-    let best = if opaque != 15 {
+    let best = if opaque != full {
         opaque
     } else {
         // solid first so ties prefer a single colour
-        let mut best = (err(15, mean(15)), 15usize);
-        for mask in 1..8 {
-            let e = err(mask, mean(mask)) + err(15 ^ mask, mean(15 ^ mask));
+        let mut best = (err(full), full);
+        for mask in 1..full >> 1 << 1 {
+            if mask >> (n - 1) & 1 == 1 {
+                continue;
+            }
+            let e = err(mask) + err(full ^ mask);
             if e < best.0 {
                 best = (e, mask);
             }
         }
         best.1
     };
-    let (fg, bg) = (mean(best).unwrap(), mean(15 ^ best));
+    let fg = mean(best).unwrap();
     let mut s = format!("\x1b[38;2;{};{};{}m", fg[0], fg[1], fg[2]);
-    if let Some(b) = bg.filter(|_| opaque == 15) {
+    if let Some(b) = mean(full ^ best).filter(|_| opaque == full) {
         s += &format!("\x1b[48;2;{};{};{}m", b[0], b[1], b[2]);
     }
-    s.push(CH[best]);
+    s.push(glyph(best));
     s + "\x1b[0m"
 }

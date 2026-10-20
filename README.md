@@ -58,6 +58,10 @@ screenfetch [--logo FILE] [--distro ID] [--protocol auto|kitty|iterm2|sixel|bloc
 
 Sixel is detected automatically by asking the terminal (DA1); force it with `--protocol sixel`. The terminal is also asked for its cell size so the logo stays square.
 
+## Terminals without an image protocol (e.g. Ptyxis)
+
+Ptyxis/VTE does not enable Sixel, so nothing can draw real pixels there. The fallback renderer blends the logo over your terminal background and draws it with block glyphs: 2x4 sub-pixels per cell (Unicode 16 octants) when your terminal font has them (Adwaita Mono, Cascadia, ... checked with `fc-list`), otherwise 2x2 quadrants. Force one with `--glyphs octant|quadrant`.
+
 ## Config
 
 `~/.config/screenfetch/config.toml` (all keys optional, CLI flags win):
@@ -67,6 +71,7 @@ logo     = "/path/to/logo.svg"
 distro   = "fedora"
 protocol = "auto"        # auto | kitty | iterm2 | sixel | blocks
 rows     = 20
+glyphs   = "auto"        # fallback renderer: auto | quadrant | octant
 color    = "cyan"        # black red green yellow blue magenta cyan white
 show     = ["os", "kernel", "uptime", "shell", "cpu", "memory"]
 # keys: os release host kernel uptime shell display de wm theme icons font

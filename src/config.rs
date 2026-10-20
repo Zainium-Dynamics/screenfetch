@@ -9,6 +9,8 @@ pub struct Config {
     pub distro: Option<String>,
     pub protocol: Option<String>,
     pub rows: Option<u32>,
+    /// Fallback renderer glyphs: auto, quadrant (2x2) or octant (2x4, needs a font with Unicode 16 octants).
+    pub glyphs: Option<String>,
     /// Info lines to show, in order (keys: os, kernel, uptime, shell, cpu, memory).
     pub show: Option<Vec<String>>,
     /// Label colour: black, red, green, yellow, blue, magenta, cyan, white.

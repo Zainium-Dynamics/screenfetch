@@ -183,7 +183,7 @@ fn disks() -> Vec<(String, String)> {
     paths.into_iter().map(|p| (format!("Disk ({p})"), disk_usage(&p))).collect()
 }
 
-fn terminal_font() -> String {
+pub fn terminal_font() -> String {
     let gs = |schema: &str, key: &str| cmd("gsettings", &["get", schema, key]).trim_matches('\'').to_string();
     match terminal().to_lowercase().as_str() {
         t if t.contains("ptyxis") => {
