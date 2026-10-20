@@ -27,8 +27,15 @@ pub fn probe() -> Probe {
         libc::tcsetattr(fd, libc::TCSANOW, &raw);
         let reply = query(fd, b"\x1b[16t\x1b[c", Duration::from_millis(200));
         libc::tcsetattr(fd, libc::TCSANOW, &old);
+        let mut probe = parse(&reply);
+        if probe.cell.is_none() {
+            let mut ws: libc::winsize = std::mem::zeroed();
+            if libc::ioctl(fd, libc::TIOCGWINSZ, &mut ws) == 0 && ws.ws_col > 0 && ws.ws_row > 0 && ws.ws_xpixel > 0 {
+                probe.cell = Some((ws.ws_xpixel as u32 / ws.ws_col as u32, ws.ws_ypixel as u32 / ws.ws_row as u32));
+            }
+        }
         libc::close(fd);
-        parse(&reply)
+        probe
     }
 }
 

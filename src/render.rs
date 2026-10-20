@@ -55,38 +55,25 @@ pub enum Logo {
 pub fn logo(svg: &[u8], proto: Protocol, cols: u32, rows: u32, cell: (u32, u32)) -> Result<Logo, String> {
     match proto {
         Protocol::Blocks => {
-            // supersample 4x and box-average (premultiplied) so thin edges survive the tiny grid
-            const SS: u32 = 4;
-            let pm = rasterize(svg, cols * SS, rows * 2 * SS)?;
-            let px = |x: u32, y: u32| {
-                let (mut a, mut r, mut g, mut b) = (0u32, 0u32, 0u32, 0u32);
+            // quadrant characters: 2x2 sub-pixels per cell, each supersampled 3x
+            const SS: u32 = 3;
+            let pm = rasterize(svg, cols * 2 * SS, rows * 2 * SS)?;
+            let sub = |x: u32, y: u32| -> Option<[i64; 3]> {
+                let (mut a, mut c) = (0i64, [0i64; 3]);
                 for (dx, dy) in (0..SS).flat_map(|dy| (0..SS).map(move |dx| (dx, dy))) {
                     let p = pm.pixel(x * SS + dx, y * SS + dy).unwrap();
-                    a += p.alpha() as u32;
-                    r += p.red() as u32;
-                    g += p.green() as u32;
-                    b += p.blue() as u32;
+                    a += p.alpha() as i64;
+                    c = [c[0] + p.red() as i64, c[1] + p.green() as i64, c[2] + p.blue() as i64];
                 }
-                (a > 128 * SS * SS).then(|| {
-                    let un = |v: u32| (v * 255 / a.max(1)).min(255) as u8;
-                    (un(r), un(g), un(b))
-                })
+                (a > 128 * (SS * SS) as i64).then(|| c.map(|v| (v * 255 / a).min(255)))
             };
             let lines = (0..rows)
                 .map(|r| {
-                    let mut s = String::new();
-                    for x in 0..cols {
-                        match (px(x, r * 2), px(x, r * 2 + 1)) {
-                            (None, None) => s.push(' '),
-                            (Some(t), None) => s += &format!("\x1b[38;2;{};{};{}m▀\x1b[0m", t.0, t.1, t.2),
-                            (None, Some(b)) => s += &format!("\x1b[38;2;{};{};{}m▄\x1b[0m", b.0, b.1, b.2),
-                            (Some(t), Some(b)) => s += &format!(
-                                "\x1b[38;2;{};{};{};48;2;{};{};{}m▀\x1b[0m",
-                                t.0, t.1, t.2, b.0, b.1, b.2
-                            ),
-                        }
-                    }
-                    s
+                    (0..cols)
+                        .map(|c| {
+                            quad([sub(2 * c, 2 * r), sub(2 * c + 1, 2 * r), sub(2 * c, 2 * r + 1), sub(2 * c + 1, 2 * r + 1)])
+                        })
+                        .collect::<String>()
                 })
                 .collect();
             Ok(Logo::Lines(lines))
@@ -126,4 +113,46 @@ pub fn logo(svg: &[u8], proto: Protocol, cols: u32, rows: u32, cell: (u32, u32))
             Ok(Logo::Graphic(out))
         }
     }
+}
+
+/// One cell from its sub-pixels (TL, TR, BL, BR; `None` = transparent).
+fn quad(p: [Option<[i64; 3]>; 4]) -> String {
+    const CH: [char; 16] = [' ', '▘', '▝', '▀', '▖', '▌', '▞', '▛', '▗', '▚', '▐', '▜', '▄', '▙', '▟', '█'];
+    let mean = |mask: usize| -> Option<[i64; 3]> {
+        let v: Vec<[i64; 3]> = (0..4).filter(|i| mask >> i & 1 == 1).filter_map(|i| p[i]).collect();
+        (!v.is_empty()).then(|| [0, 1, 2].map(|k| v.iter().map(|c| c[k]).sum::<i64>() / v.len() as i64))
+    };
+    let err = |mask: usize, m: Option<[i64; 3]>| -> i64 {
+        let Some(m) = m else { return 0 };
+        (0..4)
+            .filter(|i| mask >> i & 1 == 1)
+            .filter_map(|i| p[i])
+            .map(|c| (0..3).map(|k| (c[k] - m[k]).pow(2)).sum::<i64>())
+            .sum()
+    };
+    let opaque = (0..4).fold(0usize, |m, i| m | (p[i].is_some() as usize) << i);
+    if opaque == 0 {
+        return " ".into();
+    }
+    // transparent sub-pixels must stay background-coloured: draw only the opaque ones
+    let best = if opaque != 15 {
+        opaque
+    } else {
+        // solid first so ties prefer a single colour
+        let mut best = (err(15, mean(15)), 15usize);
+        for mask in 1..8 {
+            let e = err(mask, mean(mask)) + err(15 ^ mask, mean(15 ^ mask));
+            if e < best.0 {
+                best = (e, mask);
+            }
+        }
+        best.1
+    };
+    let (fg, bg) = (mean(best).unwrap(), mean(15 ^ best));
+    let mut s = format!("\x1b[38;2;{};{};{}m", fg[0], fg[1], fg[2]);
+    if let Some(b) = bg.filter(|_| opaque == 15) {
+        s += &format!("\x1b[48;2;{};{};{}m", b[0], b[1], b[2]);
+    }
+    s.push(CH[best]);
+    s + "\x1b[0m"
 }

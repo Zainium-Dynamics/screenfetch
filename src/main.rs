@@ -10,7 +10,7 @@ const HELP: &str = "screenfetch - system info with an SVG logo drawn right in th
 
 USAGE: screenfetch [OPTIONS]
   --logo FILE      render this SVG
-  --distro ID      look up <share>/ID.pixmap/ID_logo.svg (default: from /etc/os-release)
+  --distro ID      look up <share>/ID.pixmap/ID_logo.svg (default: zainium; `auto` = from /etc/os-release)
   --protocol P     auto | kitty | iterm2 | sixel | blocks
   --rows N         logo height in terminal rows (default 20)
   --probe          show what the terminal reported (sixel support, cell size)
@@ -56,10 +56,15 @@ fn main() {
     }
 
     let os = info::os_release();
-    let mut ids: Vec<String> = distro.into_iter().collect();
-    if ids.is_empty() {
-        ids.push(os.id.clone());
-        ids.extend(os.id_like.iter().cloned());
+    // the built-in distro (zainium) unless asked otherwise; `auto` follows /etc/os-release
+    let mut ids: Vec<String> = Vec::new();
+    match distro.as_deref() {
+        None => ids.push(logo::DEFAULT_DISTRO.into()),
+        Some("auto") => {
+            ids.push(os.id.clone());
+            ids.extend(os.id_like.iter().cloned());
+        }
+        Some(d) => ids.push(d.into()),
     }
     if list {
         for id in &ids {
@@ -75,7 +80,7 @@ fn main() {
 
     let svg = logo::resolve(file.as_deref(), &ids).unwrap_or_else(|e| die(&e));
     // keep the logo square on screen whatever the cell shape is
-    let cell = probe.cell.unwrap_or((10, 20));
+    let cell = probe.cell.unwrap_or((9, 20));
     let cols = (rows * cell.1 + cell.0 / 2) / cell.0;
     let art = render::logo(&svg, proto, cols, rows, cell).unwrap_or_else(|e| die(&e));
 
