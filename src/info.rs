@@ -157,15 +157,48 @@ fn gib(bytes: u64) -> String {
     format!("{:.2} GiB", bytes as f64 / (1u64 << 30) as f64)
 }
 
-fn disk() -> String {
-    let out = cmd("df", &["-B1", "--output=size,used,fstype", "/"]);
+fn disk_usage(path: &str) -> String {
+    let out = cmd("df", &["-B1", "--output=size,used,fstype", path]);
     let f: Vec<&str> = out.lines().nth(1).unwrap_or("").split_whitespace().collect();
     match f[..] {
         [size, used, fs] => {
             let (s, u): (u64, u64) = (size.parse().unwrap_or(0), used.parse().unwrap_or(0));
-            format!("{} / {} ({}%) - {fs}", gib(u), gib(s), u * 100 / s.max(1))
+            let ext = if path.starts_with("/run/media/") || path.starts_with("/media/") { " [External]" } else { "" };
+            format!("{} / {} ({}%) - {fs}{ext}", gib(u), gib(s), u * 100 / s.max(1))
         }
         _ => String::new(),
+    }
+}
+
+/// `/` plus user-visible mounts (USB drives and friends).
+fn disks() -> Vec<(String, String)> {
+    let mut paths = vec!["/".to_string()];
+    for l in file("/proc/mounts").lines() {
+        let Some(mp) = l.split_whitespace().nth(1) else { continue };
+        let mp = mp.replace("\\040", " ");
+        if ["/run/media/", "/media/", "/mnt/"].iter().any(|p| mp.starts_with(p)) && !paths.contains(&mp) {
+            paths.push(mp);
+        }
+    }
+    paths.into_iter().map(|p| (format!("Disk ({p})"), disk_usage(&p))).collect()
+}
+
+fn terminal_font() -> String {
+    let gs = |schema: &str, key: &str| cmd("gsettings", &["get", schema, key]).trim_matches('\'').to_string();
+    match terminal().to_lowercase().as_str() {
+        t if t.contains("ptyxis") => {
+            let own = gs("org.gnome.Ptyxis", "font-name");
+            let sys = gs("org.gnome.Ptyxis", "use-system-font") != "false";
+            if sys || own.is_empty() { gs("org.gnome.desktop.interface", "monospace-font-name") } else { own }
+        }
+        "kitty" => {
+            let home = env::var("HOME").unwrap_or_default();
+            file(&format!("{home}/.config/kitty/kitty.conf"))
+                .lines()
+                .find_map(|l| l.strip_prefix("font_family").map(|v| v.trim().to_string()))
+                .unwrap_or_default()
+        }
+        _ => gs("org.gnome.desktop.interface", "monospace-font-name"),
     }
 }
 
@@ -204,7 +237,7 @@ fn cpu() -> String {
 }
 
 /// (key, label, value) rows plus the `user@host` title. Rows with no value are dropped.
-pub fn collect(os: &OsRelease) -> (String, Vec<(&'static str, &'static str, String)>) {
+pub fn collect(os: &OsRelease) -> (String, Vec<(&'static str, String, String)>) {
     let title = format!("{}@{}", env::var("USER").unwrap_or_else(|_| "user".into()), file("/proc/sys/kernel/hostname"));
     let up = file("/proc/uptime").split('.').next().and_then(|s| s.parse::<u64>().ok()).unwrap_or(0);
     let uptime = match (up / 86400, up % 86400 / 3600, up % 3600 / 60) {
@@ -222,7 +255,7 @@ pub fn collect(os: &OsRelease) -> (String, Vec<(&'static str, &'static str, Stri
         .lines()
         .find_map(|l| l.strip_prefix("VERSION=").map(|v| v.trim_matches('"').to_string()))
         .unwrap_or_default();
-    let rows = vec![
+    let rows: Vec<(&'static str, &str, String)> = vec![
         ("os", "OS", format!("{} {}", os.pretty, std::env::consts::ARCH)),
         ("release", "Release", release),
         ("host", "Host", host()),
@@ -237,14 +270,19 @@ pub fn collect(os: &OsRelease) -> (String, Vec<(&'static str, &'static str, Stri
         ("font", "Font", gsetting("font-name")),
         ("cursor", "Cursor", gsetting("cursor-theme")),
         ("terminal", "Terminal", terminal()),
+        ("termfont", "Terminal Font", terminal_font()),
         ("cpu", "CPU", cpu()),
         ("gpu", "GPU", gpu()),
         ("memory", "Memory", format!("{} / {} ({}%)", gb(total - avail), gb(total), pct(total - avail, total))),
         ("swap", "Swap", if stotal > 0 { format!("{} / {} ({}%)", gb(stotal - sfree), gb(stotal), pct(stotal - sfree, stotal)) } else { String::new() }),
-        ("disk", "Disk (/)", disk()),
         ("ip", "Local IP", local_ip()),
         ("battery", "Battery", battery()),
         ("locale", "Locale", env::var("LANG").unwrap_or_default()),
     ];
+    let mut rows: Vec<(&'static str, String, String)> = rows.into_iter().map(|(k, l, v)| (k, l.to_string(), v)).collect();
+    let at = rows.iter().position(|r| r.0 == "ip").unwrap_or(rows.len());
+    for (n, (label, v)) in disks().into_iter().enumerate() {
+        rows.insert(at + n, ("disk", label, v));
+    }
     (title, rows.into_iter().filter(|r| !r.2.trim().is_empty()).collect())
 }

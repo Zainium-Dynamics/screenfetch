@@ -70,7 +70,7 @@ rows     = 10
 color    = "cyan"        # black red green yellow blue magenta cyan white
 show     = ["os", "kernel", "uptime", "shell", "cpu", "memory"]
 # keys: os release host kernel uptime shell display de wm theme icons font
-#       cursor terminal cpu gpu memory swap disk ip battery locale
+#       cursor terminal termfont cpu gpu memory swap disk ip battery locale
 ```
 
 ## Crates

@@ -17,6 +17,11 @@ USAGE: screenfetch [OPTIONS]
 Config: ~/.config/screenfetch/config.toml (see README)
 Env: SCREENFETCH_SHARE_DIR overrides the share dir searched at runtime.";
 
+const KEYS: &[&str] = &[
+    "os", "release", "host", "kernel", "uptime", "shell", "display", "de", "wm", "theme", "icons", "font", "cursor",
+    "terminal", "termfont", "cpu", "gpu", "memory", "swap", "disk", "ip", "battery", "locale",
+];
+
 fn main() {
     let cfg = config::load().unwrap_or_else(|e| die(&e));
     let mut args = std::env::args().skip(1);
@@ -71,9 +76,11 @@ fn main() {
     match &cfg.show {
         Some(keys) => {
             for k in keys {
-                match rows_info.iter().find(|r| r.0 == k) {
-                    Some((_, l, v)) => text.push(format!("\x1b[1;{col}m{l}\x1b[0m: {v}")),
-                    None => die(&format!("unknown info key {k:?} in config")),
+                if !KEYS.contains(&k.as_str()) {
+                    die(&format!("unknown info key {k:?} in config"));
+                }
+                for (_, l, v) in rows_info.iter().filter(|r| r.0 == k) {
+                    text.push(format!("\x1b[1;{col}m{l}\x1b[0m: {v}"));
                 }
             }
         }
