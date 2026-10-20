@@ -10,7 +10,7 @@ use render::{Logo, Protocol};
 const HELP: &str = "screenfetch - system info with an SVG logo drawn right in the terminal
 
 USAGE: screenfetch [OPTIONS]
-  --logo FILE      render this SVG
+  --logo FILE      render this SVG or PNG
   --distro ID      look up <share>/ID.pixmap/ID_logo.svg (default: zainium; `auto` = from /etc/os-release)
   --protocol P     auto | kitty | iterm2 | sixel | blocks
   --glyphs G       auto | quadrant | octant: block glyph set for the fallback renderer

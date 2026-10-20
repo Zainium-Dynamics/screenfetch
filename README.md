@@ -25,7 +25,7 @@ After this just type `screenfetch` in any terminal.
 For each id (`ID`, then `ID_LIKE` from `/etc/os-release`, or `--distro`), it looks for
 
 ```
-<share>/<id>.pixmap/<id>_logo.svg
+<share>/<id>.pixmap/<id>_logo.svg   (or _logo.png)
 ```
 
 in `$SCREENFETCH_SHARE_DIR`, `/overlayer/syshub/share`, `/usr/local/share`, `/usr/share`, then falls back to the logos embedded at build time (`assets/logos/<id>_logo.svg`: zainium, fedora, arch, alma, cachyos).
